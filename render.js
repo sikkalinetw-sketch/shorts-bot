@@ -5,9 +5,9 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 const W = 540, H = 960, FPS = 30;
-const STAGE_SECONDS = 6;
-const GROW_SECONDS = 0.8;
-const MAX_FIGURES = 15000;
+const STAGE_SECONDS = 6;        // seconds per stage
+const GROW_SECONDS = 0.8;       // how fast the new people appear
+const MAX_FIGURES = 15000;      // above this, drawn crowd stops growing (text still shows real number)
 const COUNTS = (process.env.COUNTS || '100,500,1000,2000,5000,10000,50000')
   .split(',').map(s => parseInt(s.trim(), 10)).filter(n => n > 0);
 const TOTAL_SECONDS = COUNTS.length * STAGE_SECONDS;
@@ -52,6 +52,7 @@ const N_FRAMES = Math.round(TOTAL_SECONDS * FPS);
       return m;
     };
 
+    // sand (z from -90 to 150) and sea (z from -90 to -210)
     const sand = new THREE.Mesh(new THREE.PlaneGeometry(700, 240), mat(0xe8d8a0));
     sand.rotation.x = -Math.PI / 2;
     sand.position.set(0, 0, 30);
@@ -66,18 +67,21 @@ const N_FRAMES = Math.round(TOTAL_SECONDS * FPS);
     sunDisc.position.set(90, 110, -380);
     scene.add(sunDisc);
 
+    // pier going out to sea
     scene.add(box(6, 0.4, 80, 0xb08a5a, 0, 1.6, -130));
     for (let i = 0; i < 16; i++) {
       scene.add(box(0.5, 2, 0.5, 0x6b4f2a, -2.7, 0.8, -92 - i * 5));
       scene.add(box(0.5, 2, 0.5, 0x6b4f2a, 2.7, 0.8, -92 - i * 5));
     }
 
+    // buildings along both sides
     const bcolors = [0xf2d0a4, 0xd9e4ec, 0xf4a6a0, 0xb8d8c8, 0xe8e0c0];
     for (let i = 0; i < 24; i++) {
       const h = 10 + rnd() * 30;
       const side = i % 2 === 0 ? -1 : 1;
       scene.add(box(10 + rnd() * 8, h, 10, bcolors[i % 5], side * (80 + rnd() * 30), h / 2, 60 - Math.floor(i / 2) * 14));
     }
+    // palm trees
     const palm = (x, z) => {
       const g = new THREE.Group();
       const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.4, 7, 6), mat(0x8b6b3d));
@@ -95,6 +99,7 @@ const N_FRAMES = Math.round(TOTAL_SECONDS * FPS);
     };
     for (let i = 0; i < 12; i++) palm((i % 2 ? 1 : -1) * (68 + rnd() * 8), 50 - i * 9);
 
+    // ---- crowd: instanced, grows with the stage ----
     const figs = COUNTS.map(c => Math.min(c, MAX_FIGURES));
     const F = Math.max.apply(null, figs);
     const shirt = [0xe53935, 0xfdd835, 0x43a047, 0x1e88e5, 0x8e24aa, 0xff7043, 0xffffff, 0x00acc1];
@@ -117,6 +122,7 @@ const N_FRAMES = Math.round(TOTAL_SECONDS * FPS);
     const up = new THREE.Vector3(0, 1, 0);
     const col = new THREE.Color();
     for (let i = 0; i < F; i++) {
+      // person i lives in an area sized for the crowd at that moment, so the crowd spreads as it grows
       const depth = Math.min(60, Math.max(12, 10 + i * 0.03));
       const width = Math.min(120, 36 + i * 0.015);
       const px = (rnd() - 0.5) * width;
@@ -164,6 +170,7 @@ const N_FRAMES = Math.round(TOTAL_SECONDS * FPS);
       pos.needsUpdate = true;
       seaGeo.computeVertexNormals();
 
+      // camera starts close and low, then rises and pulls back as the crowd grows
       const p = smooth(Math.min(1, t / TOTAL_SECONDS));
       camera.position.set(Math.sin(t * 0.35) * lerp(5, 20, p), lerp(4, 55, p), lerp(24, 100, p));
       camera.lookAt(0, lerp(2, 0, p), lerp(-15, -25, p));
@@ -185,7 +192,7 @@ const N_FRAMES = Math.round(TOTAL_SECONDS * FPS);
       console.log(`frame ${i}/${N_FRAMES}  elapsed ${el.toFixed(0)}s  (${(el / (i + 1)).toFixed(2)}s/frame)`);
     }
   }
-    console.log(`Rendered ${N_FRAMES} frames in ${((Date.now() - t0) / 1000).toFixed(0)}s`);
+  console.log(`Rendered ${N_FRAMES} frames in ${((Date.now() - t0) / 1000).toFixed(0)}s`);
   await browser.close();
 
   execSync(`ffmpeg -y -loglevel error -framerate ${FPS} -i frames/f%05d.jpg -vf scale=1080:1920:flags=lanczos -c:v libx264 -pix_fmt yuv420p -crf 20 videos/beach_escalation.mp4`, { stdio: 'inherit' });
