@@ -185,4 +185,9 @@ const N_FRAMES = Math.round(TOTAL_SECONDS * FPS);
       console.log(`frame ${i}/${N_FRAMES}  elapsed ${el.toFixed(0)}s  (${(el / (i + 1)).toFixed(2)}s/frame)`);
     }
   }
-  console.log(`Rendered ${N_FRAMES} frames in
+    console.log(`Rendered ${N_FRAMES} frames in ${((Date.now() - t0) / 1000).toFixed(0)}s`);
+  await browser.close();
+
+  execSync(`ffmpeg -y -loglevel error -framerate ${FPS} -i frames/f%05d.jpg -vf scale=1080:1920:flags=lanczos -c:v libx264 -pix_fmt yuv420p -crf 20 videos/beach_escalation.mp4`, { stdio: 'inherit' });
+  console.log('made videos/beach_escalation.mp4');
+})();
