@@ -1,0 +1,29 @@
+name: render-series
+on:
+  workflow_dispatch:
+    inputs:
+      counts:
+        description: "People counts in one video, comma separated"
+        default: "100,500,1000,2000,5000,10000,50000"
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - name: install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: install node packages
+        run: npm install three@0.149.0 playwright@1.48.0
+      - name: install chromium
+        run: npx playwright install --with-deps chromium
+      - name: render video
+        env:
+          COUNTS: ${{ github.event.inputs.counts }}
+        run: node render.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beach-video
+          path: videos/beach_escalation.mp4
