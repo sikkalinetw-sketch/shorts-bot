@@ -1,0 +1,24 @@
+name: render-test
+on:
+  workflow_dispatch:
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: install node packages
+        run: npm install three@0.149.0 playwright@1.48.0
+      - name: install chromium
+        run: npx playwright install --with-deps chromium
+      - name: render frames
+        run: node render.js
+      - name: make video
+        run: ffmpeg -y -framerate 30 -i frames/f%04d.png -c:v libx264 -pix_fmt yuv420p out.mp4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-video
+          path: out.mp4
