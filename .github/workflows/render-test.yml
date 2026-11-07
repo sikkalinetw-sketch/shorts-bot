@@ -18,7 +18,11 @@ jobs:
         run: node render.js
       - name: make video
         run: ffmpeg -y -framerate 30 -i frames/f%04d.png -c:v libx264 -pix_fmt yuv420p out.mp4
+      - name: make preview
+        run: cp frames/f0060.png preview.png
       - uses: actions/upload-artifact@v4
         with:
           name: test-video
-          path: out.mp4
+          path: |
+            out.mp4
+            preview.png
