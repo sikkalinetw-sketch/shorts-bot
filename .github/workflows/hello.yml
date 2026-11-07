@@ -5,8 +5,16 @@ jobs:
   hello:
     runs-on: ubuntu-latest
     steps:
-      - name: check tools
+      - name: install ffmpeg
         run: |
-          echo "Actions OK"
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
           ffmpeg -version | head -1
-          node -v
+      - name: make test video
+        run: |
+          ffmpeg -y -f lavfi -i color=c=0x1e3a8a:s=1080x1920:d=5:r=30 -c:v libx264 -pix_fmt yuv420p test.mp4
+          ls -l test.mp4
+      - name: machine info
+        run: |
+          nproc
+          free -h
