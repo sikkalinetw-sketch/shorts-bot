@@ -11,6 +11,12 @@ jobs:
     timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
+      - name: check file
+        run: |
+          wc -l render.js
+          sha1sum render.js
+          node --check render.js && echo SYNTAX_OK
+          tail -3 render.js
       - name: install ffmpeg
         run: |
           sudo apt-get update
