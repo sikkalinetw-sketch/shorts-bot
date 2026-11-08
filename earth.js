@@ -82,9 +82,13 @@ const BASE_DEG_PER_SEC = 6; // how fast the Earth turns on screen when a day is 
     });
     let earthTex;
     const img = await loadImg();
+    let sampleCanvas = null;
     if (img) {
       earthTex = new THREE.Texture(img);
       earthTex.needsUpdate = true;
+      sampleCanvas = document.createElement('canvas');
+      sampleCanvas.width = 1024; sampleCanvas.height = 512;
+      sampleCanvas.getContext('2d').drawImage(img, 0, 0, 1024, 512);
     } else {
       const c = document.createElement('canvas');
       c.width = 1024; c.height = 512;
@@ -113,7 +117,20 @@ const BASE_DEG_PER_SEC = 6; // how fast the Earth turns on screen when a day is 
       }
       g.putImageData(id, 0, 0);
       earthTex = new THREE.CanvasTexture(c);
+      sampleCanvas = c;
     }
+    const texPix = sampleCanvas.getContext('2d').getImageData(0, 0, 1024, 512).data;
+    const isLand = (lat, lon) => {
+      if (Math.abs(lat) > 1.2) return false;
+      let u = (Math.PI - lon) / (2 * Math.PI);
+      u = u - Math.floor(u);
+      const v = 0.5 + lat / Math.PI;
+      const px = Math.min(1023, Math.floor(u * 1024));
+      const py = Math.min(511, Math.max(0, Math.floor((1 - v) * 512)));
+      const k = (py * 1024 + px) * 4;
+      const r = texPix[k], g = texPix[k + 1], b = texPix[k + 2];
+      return !(b > r * 1.25 && b > g * 0.95);
+    };
 
     // Earth: tilt group > spin group > sphere
     const tiltGroup = new THREE.Group();
@@ -156,26 +173,94 @@ const BASE_DEG_PER_SEC = 6; // how fast the Earth turns on screen when a day is 
     const tiltV = (p) => [p[0] * Math.cos(TILT) - p[1] * Math.sin(TILT), p[0] * Math.sin(TILT) + p[1] * Math.cos(TILT), p[2]];
     const toWorld = (p) => { const q = tiltV(p); return [q[0], q[1] + OFFY, q[2]]; };
 
-    // things on Earth: they lift off when the day is shorter than the critical value for their latitude
-    const objColors = [0xff3b30, 0xffd60a, 0xffffff, 0x00e5ff, 0xff9500, 0xff2d92, 0x34c759];
-    const things = [];
-    const mkThing = (size, color, lat, lon, launchT, kind) => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(size, size, size), new THREE.MeshLambertMaterial({ color }));
-      scene.add(m);
-      things.push({ m, lat, lon, launchT, kind, launched: false, p0: null, v: null });
+    // low-poly models, merged into one geometry each
+    const mergeParts = (parts) => {
+      const pos = [], nor = [], col = [];
+      parts.forEach(p => {
+        const g = p.geo.index ? p.geo.toNonIndexed() : p.geo.clone();
+        g.applyMatrix4(p.m);
+        const c = new THREE.Color(p.c);
+        const pa = g.attributes.position, na = g.attributes.normal;
+        for (let i = 0; i < pa.count; i++) {
+          pos.push(pa.getX(i), pa.getY(i), pa.getZ(i));
+          nor.push(na.getX(i), na.getY(i), na.getZ(i));
+          col.push(c.r, c.g, c.b);
+        }
+      });
+      const out = new THREE.BufferGeometry();
+      out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      out.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+      out.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+      return out;
     };
+    const Tm = (x, y, z) => new THREE.Matrix4().makeTranslation(x, y, z);
+    const Rx = (a, x, y, z) => new THREE.Matrix4().makeRotationX(a).setPosition(x, y, z);
+    const Ry = (a, x, y, z) => new THREE.Matrix4().makeRotationY(a).setPosition(x, y, z);
+    const cyl = (r, h, seg) => new THREE.CylinderGeometry(r, r, h, seg || 8);
+    const bx = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+
+    const shirts = [0xe53935, 0xfdd835, 0x1e88e5, 0x43a047, 0xffffff, 0xff7043];
+    const skins = [0xf1c27d, 0xc68642, 0x8d5524, 0xffdbac];
+    const carCols = [0xe53935, 0xfdd835, 0x1e88e5, 0xffffff, 0x222222, 0xff7043];
+    const wallCols = [0xf2d0a4, 0xd9e4ec, 0xf4a6a0, 0xb8d8c8, 0xe8e0c0];
+
+    const personGeo = (i) => mergeParts([
+      { geo: cyl(0.2, 0.55, 6), m: Tm(0, 0.28, 0), c: 0x333344 },
+      { geo: cyl(0.26, 0.7, 6), m: Tm(0, 0.9, 0), c: shirts[i % shirts.length] },
+      { geo: new THREE.SphereGeometry(0.22, 8, 6), m: Tm(0, 1.45, 0), c: skins[i % skins.length] }
+    ]);
+    const treeGeo = () => mergeParts([
+      { geo: cyl(0.15, 1.0, 6), m: Tm(0, 0.5, 0), c: 0x6b4a2a },
+      { geo: new THREE.ConeGeometry(0.85, 1.8, 7), m: Tm(0, 1.8, 0), c: 0x2e8b3d },
+      { geo: new THREE.ConeGeometry(0.6, 1.3, 7), m: Tm(0, 2.6, 0), c: 0x3aa04a }
+    ]);
+    const carGeo = (i) => mergeParts([
+      { geo: bx(2.2, 0.5, 1.0), m: Tm(0, 0.5, 0), c: carCols[i % carCols.length] },
+      { geo: bx(1.1, 0.45, 0.9), m: Tm(-0.1, 0.97, 0), c: 0xbfe3ff },
+      { geo: cyl(0.26, 0.2, 8), m: Rx(Math.PI / 2, 0.7, 0.26, 0.5), c: 0x111111 },
+      { geo: cyl(0.26, 0.2, 8), m: Rx(Math.PI / 2, -0.7, 0.26, 0.5), c: 0x111111 },
+      { geo: cyl(0.26, 0.2, 8), m: Rx(Math.PI / 2, 0.7, 0.26, -0.5), c: 0x111111 },
+      { geo: cyl(0.26, 0.2, 8), m: Rx(Math.PI / 2, -0.7, 0.26, -0.5), c: 0x111111 }
+    ]);
+    const houseGeo = (i) => mergeParts([
+      { geo: bx(2, 1.3, 2), m: Tm(0, 0.65, 0), c: wallCols[i % wallCols.length] },
+      { geo: new THREE.ConeGeometry(1.7, 1.0, 4), m: Ry(Math.PI / 4, 0, 1.8, 0), c: 0xb5483a },
+      { geo: bx(0.4, 0.7, 0.06), m: Tm(0, 0.35, 1.02), c: 0x5a3a22 }
+    ]);
+
+    const things = [];
+    const up = new THREE.Vector3(0, 1, 0);
     const launchStage = (lat) => {
       const tcrit = 2 * Math.PI * Math.sqrt(R_M * Math.cos(lat) / G);
       for (let s = 0; s < DAYS.length; s++) if (DAYS[s] <= tcrit) return s;
       return -1;
     };
-    for (let i = 0; i < 700; i++) {
-      const u = rnd() * 2 - 1;
-      const lat = Math.asin(u);
+    let crashStage = -1;
+    for (let s = 0; s < DAYS.length; s++) { if (DAYS[s] <= 10200) { crashStage = s; break; } }
+
+    const kinds = ['person', 'person', 'person', 'tree', 'tree', 'tree', 'house', 'house', 'car'];
+    const kScale = { person: 0.07, tree: 0.085, house: 0.085, car: 0.07 };
+    let made = 0, tries = 0;
+    while (made < 900 && tries < 20000) {
+      tries++;
+      const lat = Math.asin(rnd() * 2 - 1);
       const lon = rnd() * Math.PI * 2;
+      if (!isLand(lat, lon)) continue;
+      const kind = kinds[made % kinds.length];
+      const geo = kind === 'person' ? personGeo(made) : kind === 'tree' ? treeGeo() : kind === 'car' ? carGeo(made) : houseGeo(made);
+      const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+      m.scale.setScalar(kScale[kind] * (0.85 + rnd() * 0.3));
+      scene.add(m);
       const ls = launchStage(lat);
-      const lt = ls < 0 ? 1e9 : ls * STAGE + 0.6 + rnd() * 2.2;
-      mkThing(0.16 + rnd() * 0.14, objColors[i % objColors.length], lat, lon, lt, 'thing');
+      const launchT = ls < 0 ? 1e9 : ls * STAGE + 0.6 + rnd() * 2.2;
+      const crashT = crashStage < 0 ? 1e9 : crashStage * STAGE + 0.4 + rnd() * 2.0 + (Math.abs(lat) / (Math.PI / 2)) * 2.5;
+      things.push({
+        m, kind, lat, lon, launchT, crashT, yaw: rnd() * Math.PI * 2, tiltDir: rnd() * Math.PI * 2,
+        tiltMax: kind === 'car' ? 2.6 : kind === 'house' ? 0.5 : 1.35, base: kScale[kind],
+        spinAxis: new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize(), spinSpeed: 2 + rnd() * 5,
+        launched: false, p0: null, v: null, qL: new THREE.Quaternion()
+      });
+      made++;
     }
     // in the last stage, big chunks of the planet break away from the equator
     const lastStart = (DAYS.length - 1) * STAGE;
@@ -183,8 +268,36 @@ const BASE_DEG_PER_SEC = 6; // how fast the Earth turns on screen when a day is 
       const lat = (rnd() - 0.5) * 0.9;
       const lon = rnd() * Math.PI * 2;
       const col = rnd() < 0.5 ? 0x8a6a3c : (rnd() < 0.5 ? 0x3c8f48 : 0x2a6fb8);
-      mkThing(0.35 + rnd() * 0.45, col, lat, lon, lastStart + 0.3 + rnd() * 1.8, 'chunk');
+      const m = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 0), new THREE.MeshLambertMaterial({ color: col, flatShading: true }));
+      const sc = 0.12 + rnd() * 0.22;
+      m.scale.set(sc, sc * (0.6 + rnd() * 0.6), sc * (0.7 + rnd() * 0.5));
+      scene.add(m);
+      things.push({
+        m, kind: 'chunk', lat, lon, launchT: lastStart + 0.3 + rnd() * 1.8, crashT: 1e9, yaw: 0, tiltDir: 0, tiltMax: 0, base: sc,
+        spinAxis: new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize(), spinSpeed: 1.5 + rnd() * 4,
+        launched: false, p0: null, v: null, qL: new THREE.Quaternion()
+      });
     }
+    const qA = new THREE.Quaternion(), qY = new THREE.Quaternion(), qT = new THREE.Quaternion(), qS = new THREE.Quaternion();
+    const nV = new THREE.Vector3(), axV = new THREE.Vector3();
+    const stateQuat = (o, th, sh, t, out) => {
+      const nl = [Math.cos(o.lat) * Math.cos(o.lon), Math.sin(o.lat), Math.cos(o.lat) * Math.sin(o.lon)];
+      const nw = tiltV(spinV(nl, th));
+      nV.set(nw[0], nw[1], nw[2]).normalize();
+      qA.setFromUnitVectors(up, nV);
+      qY.setFromAxisAngle(up, o.yaw);
+      out.copy(qA).multiply(qY);
+      if (o.kind !== 'chunk') {
+        const c = smooth(Math.min(1, Math.max(0, (t - o.crashT) / 0.9)));
+        if (c > 0) {
+          axV.set(Math.cos(o.tiltDir), 0, Math.sin(o.tiltDir));
+          qT.setFromAxisAngle(axV, o.tiltMax * c);
+          out.multiply(qT);
+        }
+        return c;
+      }
+      return 0;
+    };
 
     const camera = new THREE.PerspectiveCamera(50, W / H, 0.1, 1000);
     camera.position.set(0, 0, 26);
@@ -216,12 +329,13 @@ const BASE_DEG_PER_SEC = 6; // how fast the Earth turns on screen when a day is 
       l3.textContent = T <= 600 ? 'Earth would not stay in one piece.'
         : T <= 2500 ? 'Almost everything leaves the ground.'
         : T <= 5100 ? 'Objects at the equator float away.'
+        : T <= 10200 ? 'Cars, trees and houses crash.'
         : T < 86400 ? 'Everything stays on the ground.' : 'A normal day.';
       const pop = 1 + 0.22 * Math.max(0, 1 - local / 0.3);
       bigwrap.style.transform = 'scale(' + pop.toFixed(3) + ')';
 
-      const w = omega[s];
       things.forEach(o => {
+        const tmpQ = new THREE.Quaternion();
         if (!o.launched && t >= o.launchT) {
           const tl = o.launchT;
           const shl = shapeAt(tl);
@@ -235,19 +349,25 @@ const BASE_DEG_PER_SEC = 6; // how fast the Earth turns on screen when a day is 
           if (mag > cap) { vt = [vt[0] * cap / mag, 0, vt[2] * cap / mag]; }
           const len = Math.sqrt(sp[0] * sp[0] + sp[1] * sp[1] + sp[2] * sp[2]) || 1;
           const nrm = [sp[0] / len, sp[1] / len, sp[2] / len];
-          const v = tiltV([vt[0] + nrm[0] * 1.6, vt[1] + nrm[1] * 1.6, vt[2] + nrm[2] * 1.6]);
+          o.v = tiltV([vt[0] + nrm[0] * 1.6, vt[1] + nrm[1] * 1.6, vt[2] + nrm[2] * 1.6]);
           o.p0 = toWorld(sp);
-          o.v = v;
+          stateQuat(o, thl, shl, tl, o.qL);
           o.launched = true;
         }
         if (o.launched) {
           const dt = Math.max(0, t - o.launchT);
           o.m.position.set(o.p0[0] + o.v[0] * dt, o.p0[1] + o.v[1] * dt, o.p0[2] + o.v[2] * dt);
-          o.m.rotation.set(dt * 2.1, dt * 3.3, 0);
+          qS.setFromAxisAngle(o.spinAxis, dt * o.spinSpeed);
+          o.m.quaternion.copy(qS).multiply(o.qL);
         } else {
           const p = toWorld(spinV(surface(o.lat, o.lon, sh.f, sh.b), th));
           o.m.position.set(p[0], p[1], p[2]);
-          o.m.rotation.set(0, 0, 0);
+          stateQuat(o, th, sh, t, tmpQ);
+          o.m.quaternion.copy(tmpQ);
+          if (o.kind === 'house') {
+            const c = smooth(Math.min(1, Math.max(0, (t - o.crashT) / 0.9)));
+            o.m.scale.y = o.m.scale.x * (1 - 0.55 * c);
+          }
         }
       });
       renderer.render(scene, camera);
