@@ -35,9 +35,9 @@ const BASE_DEG_PER_SEC = 6; // how fast the Earth turns on screen when a day is 
       <div id="num" style="font-size:92px;line-height:96px"></div>
       <div id="lbl" style="font-size:44px;line-height:48px;letter-spacing:2px">s/day</div>
     </div>
-    <div id="l1" style="position:absolute;left:16px;right:16px;bottom:168px;text-align:center;color:#fff;font:700 24px Arial,sans-serif;text-shadow:0 3px 8px #000;white-space:nowrap"></div>
-    <div id="l2" style="position:absolute;left:16px;right:16px;bottom:136px;text-align:center;color:#fff;font:700 24px Arial,sans-serif;text-shadow:0 3px 8px #000;white-space:nowrap"></div>
-    <div id="l3" style="position:absolute;left:16px;right:16px;bottom:96px;text-align:center;color:#ffd54a;font:800 27px Arial,sans-serif;text-shadow:0 3px 8px #000;white-space:nowrap"></div>
+    <div id="l1" style="display:none;position:absolute;left:16px;right:16px;bottom:168px;text-align:center;color:#fff;font:700 24px Arial,sans-serif;text-shadow:0 3px 8px #000;white-space:nowrap"></div>
+    <div id="l2" style="display:none;position:absolute;left:16px;right:16px;bottom:136px;text-align:center;color:#fff;font:700 24px Arial,sans-serif;text-shadow:0 3px 8px #000;white-space:nowrap"></div>
+    <div id="l3" style="display:none;position:absolute;left:16px;right:16px;bottom:96px;text-align:center;color:#ffd54a;font:800 27px Arial,sans-serif;text-shadow:0 3px 8px #000;white-space:nowrap"></div>
   </body></html>`);
   await page.addScriptTag({ path: path.join(__dirname, 'node_modules/three/build/three.min.js') });
 
