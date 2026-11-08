@@ -1,0 +1,38 @@
+name: render-earth
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Seconds per day, comma separated"
+        default: "86400,50000,20000,10000,5000,1000,500"
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: check file
+        run: |
+          wc -l earth.js
+          sha1sum earth.js
+          node --check earth.js && echo SYNTAX_OK
+      - name: install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: install node packages
+        run: npm install three@0.149.0 playwright@1.48.0
+      - name: install chromium
+        run: npx playwright install --with-deps chromium
+      - name: get earth texture
+        run: |
+          curl -fsSL -o earth.jpg https://cdn.jsdelivr.net/gh/mrdoob/three.js@r149/examples/textures/planets/earth_atmos_2048.jpg || rm -f earth.jpg
+          ls -l earth.jpg || echo "no texture, will use generated planet"
+      - name: render video
+        env:
+          DAYS: ${{ github.event.inputs.days }}
+        run: node earth.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: earth-video
+          path: videos/earth_speed.mp4
