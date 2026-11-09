@@ -22,8 +22,7 @@ const N_FRAMES = Math.round(TOTAL_SECONDS * FPS);
   const page = await browser.newPage({ viewport: { width: W, height: H } });
   await page.setContent(`<html><body style="margin:0;position:relative;width:${W}px;height:${H}px;overflow:hidden;background:#000">
     <canvas id="c" width="${W}" height="${H}" style="position:absolute;left:0;top:0"></canvas>
-    <div id="bigwrap" style="position:absolute;left:0;right:0;top:100px;text-align:center;color:#fff;font-family:'Arial Black',Arial,sans-serif;font-weight:900;text-shadow:0 4px 10px #000,0 0 3px #000;transform-origin:50% 50%;white-space:nowrap">
-      <div style="font-size:24px;line-height:28px;letter-spacing:5px">SEA LEVEL RISE</div>
+    <div id="bigwrap" style="position:absolute;left:0;right:0;top:130px;text-align:center;color:#fff;font-family:'Arial Black',Arial,sans-serif;font-weight:900;text-shadow:0 4px 10px #000,0 0 3px #000;transform-origin:50% 50%;white-space:nowrap">
       <div><span id="num" style="font-size:96px;line-height:104px"></span><span style="font-size:56px"> m</span></div>
     </div>
   </body></html>`);
@@ -182,7 +181,7 @@ const N_FRAMES = Math.round(TOTAL_SECONDS * FPS);
         it.gy = elev(it.x, it.z);
         if (it.gy < 0.8) continue;
         it.kind = kind;
-        it.yaw = rnd() * Math.PI * 2;
+        if (it.yaw === undefined) it.yaw = rnd() * Math.PI * 2;
         it.sign = rnd() < 0.5 ? -1 : 1;
         const v = 0.88 + rnd() * 0.12;
         it.col = new THREE.Color(v, v, v);
@@ -195,11 +194,26 @@ const N_FRAMES = Math.round(TOTAL_SECONDS * FPS);
       groups.push({ mesh, items });
     };
     const rr = (a, b) => a + rnd() * (b - a);
-    addGroup(houseG, 'house', 800, () => { const s = rr(2.6, 4.2); return { x: rr(-1700, 1700), z: -rr(60, 1500), s, h: 2.2 * s }; });
-    [towerA, towerB, towerC].forEach(g => addGroup(g, 'tower', 38, () => { const h = rr(50, 320); const s = h / 11; return { x: rr(-850, 850), z: -rr(150, 1000), s, h }; }));
+    const GR = 30;
+    const snap = (v, g) => Math.round(v / g) * g;
+    addGroup(houseG, 'house', 900, () => {
+      const s = rr(2.6, 4.0);
+      return { x: snap(rr(-1700, 1700), GR) + (rnd() < 0.5 ? -9 : 9), z: snap(-rr(60, 1500), GR) + (rnd() < 0.5 ? -9 : 9), s, h: 2.2 * s, yaw: Math.floor(rnd() * 4) * Math.PI / 2 };
+    });
+    [towerA, towerB, towerC].forEach(g => addGroup(g, 'tower', 36, () => {
+      const x = snap(rr(-600, 600), 60), z = snap(-rr(250, 700), 60);
+      const dist = Math.hypot(x, z + 450);
+      const h = Math.min(320, Math.max(45, 320 * Math.exp(-dist / 260) * rr(0.55, 1.0)));
+      return { x, z, s: h / 11, h };
+    }));
     addGroup(treeG, 'tree', 1000, () => { const s = rr(2.2, 3.6); return { x: rr(-3500, 3500), z: -rr(40, 5000), s, h: 3.2 * s }; });
     addGroup(palmG, 'tree', 70, () => { const s = rr(1.2, 1.7); return { x: rr(-900, 900), z: -rr(8, 70), s, h: 8 * s }; });
-    addGroup(carG, 'car', 280, () => ({ x: rr(-950, 950), z: -rr(50, 1000), s: rr(1.8, 2.1), h: 1.4 * 2 }));
+    addGroup(carG, 'car', 280, () => {
+      const alongX = rnd() < 0.5;
+      const x = alongX ? rr(-950, 950) : snap(rr(-950, 950), GR);
+      const z = alongX ? snap(-rr(50, 1000), GR) : -rr(50, 1000);
+      return { x, z, s: rr(1.8, 2.1), h: 2.8, yaw: alongX ? 0 : Math.PI / 2 };
+    });
     addGroup(personG, 'person', 300, () => ({ x: rr(-350, 350), z: -rr(18, 500), s: rr(1.0, 1.15), h: 1.8 }));
 
     const camera = new THREE.PerspectiveCamera(60, W / H, 0.5, 60000);
@@ -211,20 +225,31 @@ const N_FRAMES = Math.round(TOTAL_SECONDS * FPS);
     const col = new THREE.Color();
     const wcol = new THREE.Color(0.15, 0.42, 0.55);
 
+    // water level: keyframes (time, metres); it rises smoothly in log-space, never stops, never goes down
+    const keys = [[0, 0]];
+    LEVELS.forEach((L, k) => keys.push([k * STAGE + 3.0, L]));
     const levelAt = (t) => {
-      const s = Math.min(LEVELS.length - 1, Math.floor(t / STAGE));
-      const local = t - s * STAGE;
-      const prev = s === 0 ? 0 : LEVELS[s - 1];
-      return lerp(prev, LEVELS[s], smooth(Math.min(1, local / RISE)));
+      const last = keys[keys.length - 1];
+      if (t >= last[0]) return last[1];
+      for (let k = 0; k < keys.length - 1; k++) {
+        if (t < keys[k + 1][0]) {
+          const a = keys[k], b = keys[k + 1];
+          const u = (t - a[0]) / (b[0] - a[0]);
+          return Math.exp(lerp(Math.log(1 + a[1]), Math.log(1 + b[1]), u)) - 1;
+        }
+      }
+      return last[1];
     };
+    const LMAX = Math.log(1 + LEVELS[LEVELS.length - 1]);
 
     window.setFrame = (t) => {
-      const s = Math.min(LEVELS.length - 1, Math.floor(t / STAGE));
-      const local = t - s * STAGE;
       const level = levelAt(t);
       water.position.y = level;
+      let s = 0;
+      for (let k = 0; k < LEVELS.length; k++) { if (level >= LEVELS[k] * 0.985) s = k; }
+      const local = t - keys[s + 1][0];
       numEl.textContent = '+' + LEVELS[s].toLocaleString('en-US');
-      const pop = 1 + 0.2 * Math.max(0, 1 - local / 0.3);
+      const pop = 1 + 0.2 * Math.max(0, 1 - Math.abs(local) / 0.3) * (local >= 0 ? 1 : 0);
       bigwrap.style.transform = 'scale(' + pop.toFixed(3) + ')';
 
       groups.forEach(g => {
@@ -234,7 +259,7 @@ const N_FRAMES = Math.round(TOTAL_SECONDS * FPS);
           if (depth > 0) {
             f = Math.min(1, depth / it.h);
             if (it.kind === 'car') {
-              if (depth > 0.5) { const k = Math.min(1, (depth - 0.5) / 1.5); y += k * 1.6; tilt = k * 0.7 * it.sign + Math.sin(t * 2 + it.x) * 0.12 * k; }
+              if (depth > 0.5) { const k = Math.min(1, (depth - 0.5) / 1.5); y += k * 1.6; tilt = k * 0.7 * it.sign; }
             } else if (it.kind === 'person') {
               if (depth > 0.9) { const k = Math.min(1, (depth - 0.9) / 1.0); y += k * 0.9; tilt = k * 1.45 * it.sign; }
             } else if (it.kind === 'tower' || it.kind === 'house') {
@@ -258,10 +283,10 @@ const N_FRAMES = Math.round(TOTAL_SECONDS * FPS);
       });
 
       // camera starts at street level on the beach and rises as the water rises
-      const p = Math.min(1, t / TOTAL);
+      const p = Math.min(1, Math.log(1 + level) / LMAX);
       const camY = 8 * Math.pow(225, p);
       const camZ = 140 * Math.pow(2600 / 140, p);
-      camera.position.set(Math.sin(t * 0.3) * camY * 0.15, camY, camZ);
+      camera.position.set(Math.sin(t * 0.2) * camY * 0.08, camY, camZ);
       camera.lookAt(0, 4 * Math.pow(75, p), lerp(-60, -3500, p));
       camera.near = Math.max(0.5, camY * 0.02);
       camera.updateProjectionMatrix();
